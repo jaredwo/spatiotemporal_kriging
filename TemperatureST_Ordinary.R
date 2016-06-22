@@ -218,7 +218,7 @@ sumMetricModel_tmin1 <- vgmST("sumMetric",
 # Does this fit?
 plot(tmin_var, sumMetricModel_tmin,map=F, all=T)
 # Try Fitting1
-fitSumMetric_tmin1 <- fit.StVariogram(tmin_var, sumMetricModel_tmin1, fit.method = 6,
+fitSumMetric_tmin1 <- fit.StVariogram(tmin_var, sumMetricModel_tmin1, fit.method = 8, #Fit method 8 seems like a good fit. (Weighting with distance and bin amount)
                                      stAni = 10, method = "BFGS")
 # Does this fit better?
 plot(tmin_var, fitSumMetric_tmin1,map=F, all=T) #YES
@@ -322,14 +322,16 @@ attr(simpleSumMetric_tmax, "MSE")
 
 
 #Create prediction grid
-tm.grid <- seq(as.POSIXct('2011-12-12 06:00 CET'),as.POSIXct('2011-12-14 09:00 CET'),
-               length.out=5) 
-grid.ST <- STF(sp.grid.UTM,tm.grid) 
+tm.grid <- seq(as.Date("1960/1/1"), as.Date("2015/1/1"), "years")
+sp.grid <- readGDAL("~/Projects/spatiotemporal_kriging/data/mask_conus_25deg.tif") # Proj4??
+grid.ST <- STF(sp.grid,tm.grid) 
 
 #Kriging
-precipPredict <- krigeST(PPB~1, data=timeDF, modelList=fitSumMetric, newdata=grid.ST) 
-stplot(precipPredict)
+precipPredict_tmin <- krigeST(gamma~1, data=stfdf_tmin, modelList=sumMetric_tmin, newdata=grid.ST) 
+stplot(precipPredict_tmin)
 
+precipPredict_tmax <- krigeST(PPB~1, data=stfdf_tmax, modelList=sumMetric_tmax, newdata=grid.ST) 
+stplot(precipPredict_tmax)
 #Cross Validation
 
 
