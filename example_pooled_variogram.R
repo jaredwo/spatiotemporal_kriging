@@ -58,8 +58,10 @@ fitModel_tmin <- fit.variogram(emp_var_tmin, vgmModel_tmin)
 plot(emp_var_tmin, fitModel_tmin, all=T)
 
 vgmModel_tmax <- vgm(psill = 1.1, model = "Exp", range = 2000, nugget = .11)
+
 #Does this fit?
 plot(emp_var_tmax, vgmModel_tmax, all=T)
+
 #Try Fitting
 fitModel_tmax <- fit.variogram(emp_var_tmax, vgmModel_tmax)
 plot(emp_var_tmax, fitModel_tmax, all=T)
@@ -69,16 +71,11 @@ coordinates(df_tmin) <- ~longitude+latitude
 proj4string(df_tmin) <- CRS("+proj=longlat +datum=WGS84")
 coordinates(df_tmax) <- ~longitude+latitude
 proj4string(df_tmax) <- CRS("+proj=longlat +datum=WGS84")
-setwd('/mizuna/s0/jwo118/summer_scholars/kriging_example/data')
-bbox <- extent(readOGR('bbox_fnl.shp','bbox_fnl'))
-df_tmin <- crop(df_tmin, bbox)
-df_tmax <- crop(df_tmax, bbox)
 
 #Grid
-setwd("~/Projects/spatiotemporal_kriging/data")
-spGrid <- raster('mask_conus_25deg.tif')
-# Crop to domain bbox
-spGrid <- crop(spGrid, bbox)
+
+spGrid <- raster('data/mask_conus_25deg.tif')
+# Set up spatial grid
 proj4string(spGrid) <- proj4string(df_tmin)
 spGrid_spdf <- as(spGrid,'SpatialPixelsDataFrame')
 spplot(spGrid_spdf)
