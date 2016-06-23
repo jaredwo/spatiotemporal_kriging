@@ -115,25 +115,26 @@ sumMetricModel_tmin1_day <- vgmST("sumMetric",
 plot(tmin_var_day, sumMetricModel_tmin1_day,map=F, all=T)
 
 # Try Fitting
-fitSumMetric_tmin1_day <- fit.StVariogram(tmin_var_day, sumMetricModel_tmin1_day, fit.method = 8, #Fit method 8 seems like a good fit. (Weighting with distance and bin amount)
+fitSumMetric_tmin1_day <- fit.StVariogram(tmin_var_day, sumMetricModel_tmin1_day, fit.method = 11, #Fit method 8 seems like a good fit. (Weighting with distance and bin amount)
                                       stAni = tmin_stAni_day, method="L-BFGS-B")
 
 # Try the various fit methods and choose the one with the lowest MSE
-for (variable in c(1:13)){
-  temp.alternate <- fit.StVariogram(tmin_var_day, fitSumMetric_tmin1_day, fit.method=variable, method="BFGS", stAni=tmin_stAni_day)
+for (variable in 1:13){
+  temp.alternate <- fit.StVariogram(tmin_var_day, sumMetricModel_tmin1_day, fit.method=variable, method="L-BFGS-B", stAni=tmin_stAni_day)
+  plot(tmin_var_day, temp.alternate, map=F, all=T, main="Fit method = " + variable)
   temp.mse = attr(temp.alternate, "MSE")
   main.mse = attr(fitSumMetric_tmin1_day, "MSE")
-  if(temp.mse<main.mse){
-    fitSumMetric_tmin1_day <- temp.alternate
-    print("New best " + variable)
-  }
+#   if(temp.mse<main.mse){
+#     fitSumMetric_tmin1_day <- temp.alternate
+#     print("New best " + variable)
+#   }
 }
 
 # Does this fit better?
 plot(tmin_var_day, fitSumMetric_tmin1_day,map=F, all=T) #No
 
 #Best Model
-sumMetric_tmin_day <- sumMetricModel_tmin1_day
+sumMetric_tmin_day <- fitSumMetric_tmin1_day
 
 #Tmax
 sumMetricModel_tmax1_day <- vgmST("sumMetric",
@@ -146,8 +147,9 @@ sumMetricModel_tmax1_day <- vgmST("sumMetric",
 plot(tmax_var_day, sumMetricModel_tmax1_day,map=F, all=T)
 
 #Try Fitting
-fitSumMetric_tmax1_day <- fit.StVariogram(tmax_var_day, sumMetricModel_tmax1_day, fit.method = 8,
+fitSumMetric_tmax1_day <- fit.StVariogram(tmax_var_day, sumMetricModel_tmax1_day, fit.method = 11,
                                       stAni = tmax_stAni_day, method="L-BFGS-B")
+plot(tmax_var_day, fitSumMetric_tmax1_day,map=F, all=T) #No
 
 # Try the various fit methods and choose the one with the lowest MSE
 for (variable in c(1:13)){
@@ -164,7 +166,7 @@ for (variable in c(1:13)){
 plot(tmax_var_day, fitSumMetric_tmax1_day,map=F, all=T) #No
 
 #Best
-sumMetric_tmax_day <- sumMetricModel_tmax1_day
+sumMetric_tmax_day <- fitSumMetric_tmax1_day
 
 # Plot empirical vs. fitted variograms
 plot(tmin_var_day, sumMetric_tmin_day, map=F,main = "SumMetric Tmin", all=T)
