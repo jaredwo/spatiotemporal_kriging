@@ -5,6 +5,7 @@ library(sp)
 library(spacetime)
 library(raster)
 library(xts)
+library(reshape2)
 
 # Set environment timezone to UTC to avoid timezone conflicts
 Sys.setenv(TZ="UTC")
@@ -15,51 +16,68 @@ Sys.setenv(TZ="UTC")
 crs_lcc <- CRS(paste0("+proj=lcc +lat_1=33 +lat_2=45 +lat_0=39 +lon_0=-96 +x_0=0",
                       "+y_0=0 +ellps=GRS80 +datum=NAD83 +units=km +no_defs"))
 
-# Read in Tmin observations and transform year column to POSIXct
-obs_tmin <- read.csv('data/ann_anoms_tmin.csv',stringsAsFactors = FALSE)
-obs_tmin$year <- as.POSIXct(paste(obs_tmin$year, "01", "01", sep = "-"))
+# Read in temperature observations and transform year column to POSIXct
+obs_tmin_df <- read.csv('data/ann_anoms_tmin.csv',stringsAsFactors = FALSE)
+obs_tmin_df$year <- as.POSIXct(paste(obs_tmin_df$year, "01", "01", sep = "-"))
 
-obs_tmax <- read.csv('data/ann_anoms_tmax.csv', stringsAsFactors = FALSE)
-obs_tmax$year <- as.POSIXct(paste(obs_tmax$year, "01", "01", sep = "-"))
+obs_tmax_df <- read.csv('data/ann_anoms_tmax.csv',stringsAsFactors = FALSE)
+obs_tmax_df$year <- as.POSIXct(paste(obs_tmax_df$year, "01", "01", sep = "-"))
 
-# Change to SpatialPointsDataFrame
-coordinates(obs_tmin) <- ~longitude+latitude
-proj4string(obs_tmin) <- CRS("+proj=longlat +datum=WGS84")
+# Extract out unique station locations and build SpatialPointsDataFrame of 
+# station locations and metadata. There should be 1218 total stations
+stns <- unique(obs_tmin_df[,c('station_id','station_name','longitude','latitude','elevation')])
+# Change stns to SpatialPointsDataFrame
+coordinates(stns) <- ~longitude+latitude
+proj4string(stns) <- CRS("+proj=longlat +datum=WGS84")
 
-coordinates(obs_tmax) <- ~longitude+latitude
-proj4string(obs_tmax) <- CRS("+proj=longlat +datum=WGS84")
+# Transform stations from lon/lat WGS84 to LCC
+stns <- spTransform(stns, crs_lcc)
+# Set the row names as the station ids. This will let us reference a station point
+# by id in the STFDF
+row.names(stns) <- stns$station_id
+plot(stns)
 
-# Transfrom points from lon/lat WGS84 to LCC
-obs_tmin <- spTransform(obs_tmin, crs_lcc)
-obs_tmax <- spTransform(obs_tmax, crs_lcc)
+# Change obs_tmin_df and obs_tmax_df from long tables to a space-wide tables using dcast
+# from the reshape2 package. In a space-wide table, each column is a station
+# time series
+obs_tmin_df <- dcast(obs_tmin_df[,c('year','station_id','tmin')],year~station_id)
+obs_tmax_df <- dcast(obs_tmax_df[,c('year','station_id','tmax')],year~station_id)
 
-# Convert back to dataframe for input to stConstruct
-obs_tmin <- as.data.frame(obs_tmin)
-obs_tmax <- as.data.frame(obs_tmax)
+# Separate out time index from the dataframe
+time_index <- obs_tmin_df$year
+obs_tmin_df <- obs_tmin_df[,-1]
+obs_tmax_df <- obs_tmax_df[,-1]
 
-# Convert to spacetime object. Note: spatial coordinates are now x and y, not
-# longitude and latitude
-obs_tmin <- stConstruct(x=obs_tmin, c('x','y'), time="year", crs = crs_lcc)
-obs_tmin <- as(obs_tmin, "STFDF")
+# Make sure stns is in the same order as columns of obs_tmin_df
+stns <- stns[colnames(obs_tmin_df),]
 
-obs_tmax <- stConstruct(x=obs_tmax, c('x','y'), time="year", crs = crs_lcc)
-obs_tmax <- as(obs_tmax, "STFDF")
+# For input to STFDF,obs_tmin_df needs n*m rows with the spatial index moving
+# the fastest
+obs_tmin_df <- data.frame('tmin'=as.numeric(t(obs_tmin_df)))
+obs_tmax_df <- data.frame('tmax'=as.numeric(t(obs_tmax_df)))
+
+# Create STFDFs
+obs_tmin_spdf <- STFDF(sp=stns, time=time_index, data=obs_tmin_df)
+obs_tmax_spdf <- STFDF(sp=stns, time=time_index, data=obs_tmax_df)
 
 # Create dummy dates so that each year is considered a day in the variogram
 # modeling. Better way to do this?
 dummy_dates <- as.POSIXct(seq(as.Date('2015-01-01'), by='day',
-                              length.out=length(obs_tmin@time)))
+                              length.out=length(obs_tmin_spdf@time)))
 # Set dummy dates on the obs_tmin STFDF object
-index(obs_tmin@time) <- dummy_dates
-index(obs_tmax@time) <- dummy_dates
+index(obs_tmin_spdf@time) <- dummy_dates
+index(obs_tmax_spdf@time) <- dummy_dates
 
 # Set dummy end dates on the obs_tmin STFDF object (times + one day)
-obs_tmin@endTime <- (dummy_dates + (60*60*24))
-obs_tmax@endTime <- (dummy_dates + (60*60*24))
+obs_tmin_spdf@endTime <- (dummy_dates + (60*60*24))
+obs_tmax_spdf@endTime <- (dummy_dates + (60*60*24))
+                          
+# Set environment timezone to UTC to avoid timezone conflicts
+Sys.setenv(TZ="UTC")
 
 #Rename for convenience
-stfdf_tmin_day <- obs_tmin
-stfdf_tmax_day <- obs_tmax
+stfdf_tmin_day <- obs_tmin_spdf
+stfdf_tmax_day <- obs_tmax_spdf
 
 # Compute sample variogram
 tmin_var_day <- variogramST(tmin~1,data=stfdf_tmin_day,tunit="days",assumeRegular=T,na.omit=T, progress = TRUE, cutoff=3500) 
@@ -72,51 +90,35 @@ tmax_var_day <- variogramST(tmax~1,data=stfdf_tmax_day,tunit="days",assumeRegula
 # Joint: sill = .7
 plot(tmin_var_day,map=F) 
 plot(tmin_var_day,wireframe=T)
+plot(tmin_var_day[tmin_var_day$spacelag==0,'timelag'],tmin_var_day[tmin_var_day$spacelag==0,'gamma'])
 #Tmax
 # Spatial: Nugget ~ .15 range ~ 2000km sill ~.8
 # Temporal: Nugget ~ .18 range ~ 3 years sill ~ .7
 # Joint: sill = .9
 plot(tmax_var_day,map=F)
 plot(tmax_var_day,wireframe=T) 
+plot(tmax_var_day[tmax_var_day$spacelag==0,'timelag'],tmax_var_day[tmax_var_day$spacelag==0,'gamma'])
 
 #Estimate ST Anisotropy
 tmin_stAni_day <- estiStAni(tmin_var_day, interval = c(10, 1000), method = "linear")
 tmax_stAni_day <- estiStAni(tmax_var_day, interval = c(10, 1000), method = "linear")
 
-#Estimate lower and upper bounds
-bound.l.tmin_day <- c(sill.s = .4, range.s = 1300, nugget.s = .1,
-                  sill.t = .4, range.t = 1, nugget.t = .1,
-                  sill.st = .55, range.st = 1300, nugget.st = 0.1,
-                  anis = 120)
-bound.u.tmin_day <- c(sill.s = .7, range.s = 2000, nugget.s = .2,
-                  sill.t = .8, range.t = 3, nugget.t = .2,
-                  sill.st = 200, range.st = 2000, nugget.st = .2,
-                  anis = 140)  
-
-bound.l.tmax_day <- c(sill.s = .7, range.s = 1500, nugget.s = .1,
-                  sill.t = .6, range.t = 1, nugget.t = .1,
-                  sill.st = .9, range.st = 1000, nugget.st = .1,
-                  anis = 140)
-bound.u.tmax_day <- c(sill.s = .9, range.s = 2500, nugget.s = .2,
-                  sill.t = .8, range.t = 3, nugget.t = .2,
-                  sill.st = 1.1, range.st = 2000, nugget.st = .2,
-                  anis = 150)   
-
 # Sum Metric Model
 #Tmin
 #Using parameters from earlier model estimations
 sumMetricModel_tmin1_day <- vgmST("sumMetric",
-                              space = vgm(.45, "Sph", 3000, 0.11),
-                              time = vgm(0.1335337, "Sph", 1.95, 0.2495566),
-                              joint = vgm(.01,"Mat", 1500, .1),
-                              stAni = tmin_stAni_day)
+                                  space = vgm(psill=0, "Exp", range=1500, nugget=0),
+                                  time = vgm(psill=0,"Exp", range=1, nugget=0),
+                                  joint = vgm(psill=0.53, "Sph", range=3000, nugget=0.17 ),
+                                  stAni = tmin_stAni_day)
 
 # Does this fit?
 plot(tmin_var_day, sumMetricModel_tmin1_day,map=F, all=T)
 
 # Try Fitting
-fitSumMetric_tmin1_day <- fit.StVariogram(tmin_var_day, sumMetricModel_tmin1_day, fit.method = 11, #Fit method 8 seems like a good fit. (Weighting with distance and bin amount)
-                                      stAni = tmin_stAni_day, method="L-BFGS-B")
+fitSumMetric_tmin1_day <- fit.StVariogram(tmin_var_day, sumMetricModel_tmin1_day,
+                                          control = list(parscale = c(1,10000,1,1,1,1,1,10000,1,10000), maxit=2e4))
+# parscale: sill.s, range.s, nugget.s, sill.t ,  range.t ,   nugget.t , sill.st, range.st , nugget.st, ani
 
 # Try the various fit methods and choose the one with the lowest MSE
 for (variable in 1:13){
@@ -131,25 +133,24 @@ for (variable in 1:13){
 }
 
 # Does this fit better?
-plot(tmin_var_day, fitSumMetric_tmin1_day,map=F, all=T) #No
+plot(tmin_var_day, fitSumMetric_tmin1_day,map=F, all=T) #yes
 
 #Best Model
 sumMetric_tmin_day <- fitSumMetric_tmin1_day
 
 #Tmax
 sumMetricModel_tmax1_day <- vgmST("sumMetric",
-                              space = vgm(0.65, "Exp", 1400, 0.14),
-                              time = vgm(.15, "Sph", 3, 0.15),
-                              joint = vgm(.3,"Mat", 2500, 0),
-                              stAni = tmax_stAni_day)
+                                  space = vgm(psill=0, "Exp", range=1500, nugget=0),
+                                  time = vgm(psill=0,"Exp", range=1, nugget=0),
+                                  joint = vgm(psill=0.68, "Sph", range=3000, nugget=0.16),
+                                  stAni = tmax_stAni_day)
 
-#Does this fit?
+# Does this fit?
 plot(tmax_var_day, sumMetricModel_tmax1_day,map=F, all=T)
 
-#Try Fitting
-fitSumMetric_tmax1_day <- fit.StVariogram(tmax_var_day, sumMetricModel_tmax1_day, fit.method = 11,
-                                      stAni = tmax_stAni_day, method="L-BFGS-B")
-plot(tmax_var_day, fitSumMetric_tmax1_day,map=F, all=T) #No
+# Try Fitting
+fitSumMetric_tmax1_day <- fit.StVariogram(tmax_var_day, sumMetricModel_tmax1_day,
+                                          control = list(parscale = c(1,10000,1,1,1,1,1,10000,1,10000), maxit=2e4))
 
 # Try the various fit methods and choose the one with the lowest MSE
 for (variable in c(1:13)){
@@ -163,7 +164,7 @@ for (variable in c(1:13)){
 }
 
 #Does this fit better?
-plot(tmax_var_day, fitSumMetric_tmax1_day,map=F, all=T) #No
+plot(tmax_var_day, fitSumMetric_tmax1_day,map=F, all=T) #Yes
 
 #Best
 sumMetric_tmax_day <- fitSumMetric_tmax1_day
@@ -200,8 +201,33 @@ precipPredict_tmax_day <- krigeST(tmax~1, data=stfdf_tmax_day, modelList=sumMetr
 stplot(precipPredict_tmax_day)
 
 #Cross Validation
+# stfdf_tmin[station, time, attribute] how to do???
+# SUbset out one station, predict time series, repeat for all stations and combine predictions in data frame
+# Do same for pooled (taking out on station), but predict each year for all stations for all years
 
+### Create grids for storing the predicted time series
+prediction_tmin <- data.frame(time=unique(index(obs_tmin_spdf)))
+prediction_tmax <- data.frame(time=unique(index(obs_tmin_spdf)))
 
-
+for (i in 1:length(stns)){
+  #The station to be kriged as an STF object
+  stnid <- stns$station_id[i]
+  stn_stf <- as(obs_tmin_spdf[stnid,,'tmin',drop=F],'STF')
+  
+  # The stations to be used in the kriging (all except the station to be kriged)
+  stnids_keep <- stns$station_id[-i]
+  
+  # Create a temporary SPDF of all stations except the one to be kriged
+  obs_temp_tmin <- obs_tmin_spdf[stnids_keep]
+  obs_temp_tmax <- obs_tmax_spdf[stnids_keep]
+  
+  # The kriged time series
+  temp.krige.tmin <- krigeST(tmin~1, data=obs_temp_tmin, modelList=sumMetric_tmin_day, newdata=stn_stf, nmax = 100,  stAni=tmin_stAni_day) 
+  temp.krige.tmax <- krigeST(tmax~1, data=obs_temp_tmax, modelList=sumMetric_tmax_day, newdata=stn_stf, nmax = 100,  stAni=tmax_stAni_day)
+  
+  # Store for Leave One Out CV
+  prediction_tmin[stnid] <- temp.krige.tmin$var1.pred
+  prediction_tmax[stnid] <- temp.krige.tmax$var1.pred
+}
 # Bibliography
 #http://www.r-bloggers.com/spatio-temporal-kriging-in-r/
