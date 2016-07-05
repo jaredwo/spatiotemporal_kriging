@@ -128,26 +128,57 @@ spplot(tmaxPredict_pooled, main = "T-Max")
 
 #Crossvalidation
 # Make years in a vector
-years <- c(seq(1900,2015,1))
-for (i in 1:length(years)){
-  years[i] <- toString(did[i])
-}
+years <- as.character(seq(1900,2015,1))
 
 #Set up Null data frames
 pooledPrediction_tmin <- NULL
 pooledPrediction_tmax <- NULL
+
+bMask_tmin <- NULL
+bMask_tmax <- NULL
 
   # Loop through years
 for (y in 1:length(years)){
   # Get just that year's data for main grid
   df_tmin_year <- stfdf_tmin[,years[y], 'tmin']
   df_tmax_year <- stfdf_tmax[,years[y], 'tmax']
+  
+  # Get rid of NA stations
+  bMask_tmin <- cbind(bMask_tmin, is.finite(df_tmin_year$tmin))
+  bMask_tmax <- cbind(bMask_tmax, is.finite(df_tmax_year$tmax))
+  df_tmin_year <- df_tmin_year[is.finite(df_tmin_year$tmin),]
+  df_tmax_year <- df_tmax_year[is.finite(df_tmax_year$tmax),]
 
   # Do  leave one out CV
   tmin.cv.temp <- krige.cv(tmin~1,df_tmin_year, fitModel_tmin)
   tmax.cv.temp <- krige.cv(tmax~1,df_tmax_year, fitModel_tmax)
   
-  # Store CV Prediction
-  pooledPrediction_tmin <- rbind(pooledPrediction_tmin, tmin.cv.temp$var1.pred)
-  pooledPrediction_tmax <- rbind(pooledPrediction_tmax, tmax.cv.temp$var1.pred)
+  # Create a vector with all predicted values and NA for non applicable stations
+  stationsVector_tmin <- NULL
+  stationsVector_tmax <- NULL
+  
+  #Set index variables to the start of the vector
+  station_tmin = 1
+  station_tmax = 1
+    
+  #Tmin
+  for (i in 1:length(bMask_tmin)){ # For all stations if there is an observation store the predicted vale and increment the station index
+    if (bMask_tmin[i] == TRUE) {
+      stationsVector_tmin[i] = tmin.cv.temp$var1.pred[station_tmin]
+      station_tmin = station_tmin+1
+    }
+    #Otherwise, set the predicted value as NA
+  }
+  
+  #Repeat for Tmax
+  for (i in 1:bMask_tmax){
+    if (bMask_tmax[i] == TRUE) {
+      stationsVector_tmax[i] = tmax.cv.temp$var1.pred[station_tmax]
+      station_tmax = station_tmax+1
+    }
+  }
+  
+  # Store CV Prediction vectors in a data frame by row (1 row = 1 year and all stations)
+  pooledPrediction_tmin <- rbind(pooledPrediction_tmin, stationsVector_tmin)
+  pooledPrediction_tmax <- rbind(pooledPrediction_tmax, stationsVector_tmax)
 }
