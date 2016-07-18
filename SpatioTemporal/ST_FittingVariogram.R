@@ -26,8 +26,8 @@ plot(tmax_var,wireframe=T)
 plot(tmax_var[tmax_var$spacelag==0,'timelag'],tmax_var[tmax_var$spacelag==0,'gamma'])
 
 #Estimate ST Anisotropy
-tmin_stAni_day <- estiStAni(tmin_var_day, interval = c(10, 1000), method = "linear")
-tmax_stAni_day <- estiStAni(tmax_var_day, interval = c(10, 1000), method = "linear")
+tmin_stAni_day <- estiStAni(tmin_var, interval = c(10, 1000), method = "linear")
+tmax_stAni_day <- estiStAni(tmax_var, interval = c(10, 1000), method = "linear")
 
 # Fit using Sum Metric covariance model
 #Tmin

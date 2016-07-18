@@ -1,4 +1,13 @@
 # Part 4 of 4
+load("~/Projects/spatiotemporal_kriging/PooledWorkspace.RData")
+library(maptools)
+library(gstat)
+library(rgdal)
+library(sp)
+library(spacetime)
+library(raster)
+library(xts)
+library(reshape2)
 
 #Crossvalidation
 # Make years in a vector of characters
@@ -29,21 +38,22 @@ for (y in 1:length(years)){
   tmax.cv.temp <- krige.cv(tmax~1,df_tmax_year, fitModel_tmax)
   
   # Create a vector with all predicted values for that year and NA for stations without observations
-  stationsVector_tmin <- rep(NA, length(df_tmin_year))
-  stationsVector_tmax <- rep(NA, length(df_tmax_year))
+  stationsVector_tmin <- rep(NA, length(bMask_tmin))
+  stationsVector_tmax <- rep(NA, length(bMask_tmax))
   stationsVector_tmin[bMask_tmin] <- tmin.cv.temp$var1.pred
   stationsVector_tmax[bMask_tmax] <- tmax.cv.temp$var1.pred
   
   # Store CV Prediction vectors in a data frame by row (1 row = 1 year and all stations)
   pooledPrediction_tmin <- rbind(pooledPrediction_tmin, stationsVector_tmin)
   pooledPrediction_tmax <- rbind(pooledPrediction_tmax, stationsVector_tmax)
+  print(y)
 }
 
 # Create a data frame so that each station's predictions can be accesses via the station ID
-rownames(pooledPrediction_tmin) <- NULL
-pooledPrediction <- as.data.frame(pooledPrediction_tmin)
-colnames(pooledPrediction, do.NULL = FALSE)
+rownames(pooledPrediction_tmin) <- years
 colnames(pooledPrediction_tmin) <- stns$station_id
+rownames(pooledPrediction_tmax) <- years
+colnames(pooledPrediction_tmax) <- stns$station_id
 
 # Create a matrix of differences between predicted and observed values
 differences_tmin <- pooledPrediction_tmin - obs_tmin_spacewide
@@ -85,3 +95,44 @@ RMSE_tmax <- MSE_tmax^(1/2)
 # Global average
 avgRMSE_tmin <- mean(RMSE_tmin)
 avgRMSE_tmax <- mean(RMSE_tmax)
+
+# Create data frames for spatial trends of error
+differences_tmin_spdf <- STFDF(sp=stns, time=time_index, data=data.frame('differences'=as.numeric(t(differences_tmin))))
+differences_tmax_spdf <- STFDF(sp=stns, time=time_index, data=data.frame('differences'=as.numeric(t(differences_tmax))))
+tmin_results <- stns
+tmax_results <- stns
+tmin_results$MSE <- MSE_tmin
+tmax_results$MSE <- MSE_tmax
+tmin_results$MAE <- MAE_tmin
+tmax_results$MAE <- MAE_tmax
+tmin_results$RMSE <- RMSE_tmin
+tmax_results$RMSE <- RMSE_tmax
+
+# Plot spatial trends of errors
+spplot(tmin_results, "MSE", main = "Tmin - MSE", cuts = c(0,.25,.5,1,1.75, 2.75,4))
+spplot(tmax_results, "MSE", main = "Tmax - MSE", cuts = c(0,.25,.5,1,1.75, 2.75,4))
+spplot(tmin_results, "MAE", main = "Tmin - MAE", cuts = c(0,.25,.5,1,1.75, 2.75,4))
+spplot(tmax_results, "MAE", main = "Tmax - MAE", cuts = c(0,.25,.5,1,1.75, 2.75,4))
+spplot(tmin_results, "RMSE", main = "Tmin - RMSE", cuts = c(0,.25,.5,1,1.75, 2.75,4))
+spplot(tmax_results, "RMSE", main = "Tmax - RMSE", cuts = c(0,.25,.5,1,1.75, 2.75,4))
+
+# Create multi-panel plot of station observations for years 2012-2015
+stplot(differences_tmin_spdf[,'2012/2015','differences'])
+stplot(differences_tmax_spdf[,'2012/2015','differences'])
+
+# Look at a single station's time series of error (chose 2 stations with large tmin error - Laketown, UT and Odessa, WA)
+plot(biasDifferences_tmin$USH00424856~time_index, main = "Laketown, UT Tmin prediction error", xlab = "Year", ylab = Error in degrees Fahrenheit)
+plot(biasDifferences_tmin$USH00456039~time_index, main = "Odessa, WA Tmin prediction error", xlab = "Year", ylab = Error in degrees Fahrenheit)
+
+plot(biasDifferences_tmax$USH00424856~time_index, main = "Laketown, UT Tmax prediction error", xlab = "Year", ylab = Error in degrees Fahrenheit)
+plot(biasDifferences_tmax$USH00456039~time_index, main = "Odessa, WA Tmax prediction error", xlab = "Year", ylab = Error in degrees Fahrenheit
+
+# Looke at summary statistics     
+avgMAE_tmin
+avgMAE_tmax
+avgMSE_tmin
+avgMSE_tmax
+avgRMSE_tmin
+avgRMSE_tmax
+
+save.image(file = "~/Projects/spatiotemporal_kriging/Spatial/CV_S.RData")

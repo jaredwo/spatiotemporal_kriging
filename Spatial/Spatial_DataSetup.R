@@ -28,7 +28,7 @@ df_tmax$year <- as.POSIXct(paste(df_tmax$year, "01", "01", sep = "-"))
 
 # Extract out unique station locations and build SpatialPointsDataFrame of 
 # station locations and metadata. There should be 1218 total stations
-stns <- unique(obs_tmin_df[,c('station_id','station_name','longitude','latitude','elevation')])
+stns <- unique(df_tmin[,c('station_id','station_name','longitude','latitude','elevation')])
 # Change stns to SpatialPointsDataFrame
 coordinates(stns) <- ~longitude+latitude
 proj4string(stns) <- CRS("+proj=longlat +datum=WGS84")
@@ -47,9 +47,9 @@ obs_tmin_spacewide <- dcast(df_tmin[,c('year','station_id','tmin')],year~station
 obs_tmax_spacewide <- dcast(df_tmax[,c('year','station_id','tmax')],year~station_id)
 
 # Separate out time index from the dataframe and save in this format for later with the CV
-obs_tmin_spacewide <- df_tmin$year
-obs_tmin_spacewide <- df_tmin[,-1]
-obs_tmax_spacewide <- df_tmax[,-1]
+time_index <- unique(df_tmin$year)
+obs_tmin_spacewide <- obs_tmin_spacewide[,-1]
+obs_tmax_spacewide <- obs_tmax_spacewide[,-1]
 
 # Contruct the stfdf objects for tmin and tmax
 stidf_tmin <- stConstruct(x=df_tmin,c('longitude','latitude'),
